@@ -102,7 +102,6 @@
       font-size: 0.9rem;
     }
 
-    /* ── 結果區 ──────────────────────────────────────────────── */
     #results { max-width: 900px; margin: 0 auto; display: none; }
 
     .section-title {
@@ -217,7 +216,6 @@
       dropEl.classList.remove('drag-over');
       const dt = e.dataTransfer;
       if (dt.files.length) {
-        // 把 DataTransfer 的檔案塞回 input
         const list = new DataTransfer();
         for (const f of dt.files) list.items.add(f);
         inputEl.files = list.files;
@@ -243,11 +241,273 @@
     document.getElementById('mht-names')
   );
 
-  // ── 表單送出 ───────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // CSV 解析
+  // ══════════════════════════════════════════════════════════
+  function parseCSVLine(line) {
+    const result = [];
+    let cur = '';
+    let inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        if (inQuote && line[i + 1] === '"') { cur += '"'; i++; }
+        else inQuote = !inQuote;
+      } else if (c === ',' && !inQuote) {
+        result.push(cur.trim());
+        cur = '';
+      } else {
+        cur += c;
+      }
+    }
+    result.push(cur.trim());
+    return result;
+  }
+
+  function cleanNum(v) {
+    if (!v) return 0;
+    return parseFloat(v.replace(/,/g, '').replace(/%/g, '')) || 0;
+  }
+
+  function normaliseDate(v) {
+    return v.replace(/\//g, '-');
+  }
+
+  function parseCSV(raw) {
+    const text = raw.replace(/^\uFEFF/, '');
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+
+    if (lines.length < 2) throw new Error('CSV 內容不足，至少需要標題列 + 一筆資料');
+
+    const headers = parseCSVLine(lines[0]);
+    const findIdx = keyword => headers.findIndex(h => h.includes(keyword));
+
+    const idx = {
+      name:    findIdx('股票名稱'),
+      date:    findIdx('日期'),
+      pnl:     findIdx('損益'),
+      buyAmt:  findIdx('買進價金'),
+      sellAmt: findIdx('賣出價金'),
+      fee:     findIdx('手續費'),
+      tax:     findIdx('交易稅'),
+    };
+
+    if (idx.name === -1) throw new Error(
+      `找不到「股票名稱」欄位。\n偵測到的標題：${headers.join(' | ')}\n請確認這是券商匯出的已實現損益 CSV 檔案。`
+    );
+
+    const rows = [];
+    for (const line of lines.slice(1)) {
+      const cols = parseCSVLine(line);
+      const name = cols[idx.name] ?? '';
+      if (!name) continue;
+      rows.push({
+        name,
+        date:       normaliseDate(cols[idx.date] ?? ''),
+        pnl:        cleanNum(cols[idx.pnl]),
+        buyAmount:  cleanNum(cols[idx.buyAmt]),
+        sellAmount: cleanNum(cols[idx.sellAmt]),
+        fee:        cleanNum(cols[idx.fee]),
+        tax:        cleanNum(cols[idx.tax]),
+      });
+    }
+
+    if (rows.length === 0) throw new Error('CSV 沒有有效的資料列，請確認檔案內容。');
+
+    let totalPnl = 0, totalBuy = 0, totalSell = 0, totalFee = 0, totalTax = 0;
+    const stockMap = new Map();
+    const yearMap  = new Map();
+
+    for (const row of rows) {
+      totalPnl  += row.pnl;
+      totalBuy  += row.buyAmount;
+      totalSell += row.sellAmount;
+      totalFee  += row.fee;
+      totalTax  += row.tax;
+
+      const s = stockMap.get(row.name) ?? { pnl: 0, buyAmount: 0, count: 0 };
+      s.pnl += row.pnl; s.buyAmount += row.buyAmount; s.count++;
+      stockMap.set(row.name, s);
+
+      const year = row.date.slice(0, 4);
+      if (/^\d{4}$/.test(year)) {
+        const y = yearMap.get(year) ?? { pnl: 0, buyAmount: 0, count: 0 };
+        y.pnl += row.pnl; y.buyAmount += row.buyAmount; y.count++;
+        yearMap.set(year, y);
+      }
+    }
+
+    const byStock = [...stockMap.entries()]
+      .map(([name, v]) => ({
+        name, count: v.count,
+        pnl:        Math.round(v.pnl),
+        buyAmount:  Math.round(v.buyAmount),
+        returnRate: v.buyAmount ? parseFloat((v.pnl / v.buyAmount * 100).toFixed(2)) : 0,
+      }))
+      .sort((a, b) => b.pnl - a.pnl);
+
+    const byYear = [...yearMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([year, v]) => ({
+        year, count: v.count,
+        pnl:        Math.round(v.pnl),
+        buyAmount:  Math.round(v.buyAmount),
+        returnRate: v.buyAmount ? parseFloat((v.pnl / v.buyAmount * 100).toFixed(2)) : 0,
+      }));
+
+    return {
+      totalPnl:   Math.round(totalPnl),
+      totalBuy:   Math.round(totalBuy),
+      totalSell:  Math.round(totalSell),
+      totalFee:   Math.round(totalFee),
+      totalTax:   Math.round(totalTax),
+      totalCount: rows.length,
+      returnRate: totalBuy ? parseFloat((totalPnl / totalBuy * 100).toFixed(2)) : 0,
+      byStock,
+      byYear,
+    };
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // MHT 解析（用瀏覽器 DOMParser 取代 node-html-parser）
+  // ══════════════════════════════════════════════════════════
+  const CODE_RE = /^[0-9]{4}[0-9A-Z]{0,2}$/;
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+  function cleanNumMHT(v) {
+    return parseFloat(v.replace(/,/g, '')) || 0;
+  }
+
+  function extractHTML(mht) {
+    const start = mht.search(/<!DOCTYPE html>/i);
+    if (start === -1) throw new Error('找不到 HTML 內容，請確認為 .mht 格式');
+    let html = mht.slice(start);
+    const boundaryMatch = mht.match(/boundary="([^"]+)"/i);
+    if (boundaryMatch) {
+      const boundary = '--' + boundaryMatch[1];
+      const boundaryPos = html.indexOf(boundary);
+      if (boundaryPos > 0) html = html.slice(0, boundaryPos);
+    }
+    return html;
+  }
+
+  function extractTextNodes(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    doc.querySelectorAll('script, style').forEach(n => n.remove());
+
+    const texts = [];
+    function walk(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const t = node.textContent.trim();
+        if (t) texts.push(t);
+      } else {
+        for (const child of node.childNodes) walk(child);
+      }
+    }
+    walk(doc.body);
+    return texts;
+  }
+
+  function parseTextNodes(nodes) {
+    const records = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const token = nodes[i];
+      if (!CODE_RE.test(token)) continue;
+
+      const code = token;
+      const name = nodes[i + 1] ?? '';
+      if (!name || name.length < 2) continue;
+
+      let date = '', cash = 0, stockDiv = 0;
+      const limit = Math.min(i + 35, nodes.length);
+      for (let j = i + 2; j < limit; j++) {
+        const t = nodes[j];
+        if (!date && DATE_RE.test(t)) { date = t; continue; }
+        if (t === '股息約') { cash = cleanNumMHT(nodes[j + 1] ?? '0'); continue; }
+        if (t === '元及股票股息約' || t === '股票股息約') {
+          const sv = cleanNumMHT(nodes[j + 1] ?? '0');
+          if (sv > 0) stockDiv = sv;
+          continue;
+        }
+        if (j > i + 2 && CODE_RE.test(t)) break;
+      }
+      if (date) records.push({ code, name, date, cash, stockDiv });
+    }
+    return records;
+  }
+
+  function dedup(records) {
+    const seen = new Set();
+    return records.filter(r => {
+      const key = `${r.code}|${r.date}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function summarise(records) {
+    let totalCash = 0, totalStock = 0;
+    const stockMap = new Map();
+    const yearMap  = new Map();
+
+    for (const r of records) {
+      totalCash  += r.cash;
+      totalStock += r.stockDiv;
+      const s = stockMap.get(r.code) ?? { name: r.name, cash: 0, stock: 0 };
+      s.cash += r.cash; s.stock += r.stockDiv;
+      stockMap.set(r.code, s);
+      const year = r.date.slice(0, 4);
+      const y = yearMap.get(year) ?? { cash: 0 };
+      y.cash += r.cash;
+      yearMap.set(year, y);
+    }
+
+    const byStock = [...stockMap.entries()]
+      .map(([code, v]) => ({
+        code, name: v.name,
+        totalCash:  Math.round(v.cash),
+        totalStock: v.stock,
+        shareRatio: totalCash > 0 ? parseFloat((v.cash / totalCash * 100).toFixed(1)) : 0,
+      }))
+      .sort((a, b) => b.totalCash - a.totalCash);
+
+    const byYear = [...yearMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([year, v]) => ({ year, totalCash: Math.round(v.cash) }));
+
+    return { totalCash: Math.round(totalCash), totalStock, recordCount: records.length, byStock, byYear };
+  }
+
+  function parseMHT(raw) {
+    const html  = extractHTML(raw);
+    const nodes = extractTextNodes(html);
+    return parseTextNodes(nodes);
+  }
+
+  function mergeMHTs(raws) {
+    const all = [];
+    for (const raw of raws) all.push(...parseMHT(raw));
+    return summarise(dedup(all));
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 表單送出
+  // ══════════════════════════════════════════════════════════
+  function readFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = () => reject(new Error(`讀取檔案失敗：${file.name}`));
+      reader.readAsText(file, 'utf-8');
+    });
+  }
+
   document.getElementById('upload-form').addEventListener('submit', async e => {
     e.preventDefault();
-    const btn = document.getElementById('submit-btn');
-    const errEl = document.getElementById('error-msg');
+    const btn       = document.getElementById('submit-btn');
+    const errEl     = document.getElementById('error-msg');
     const resultsEl = document.getElementById('results');
 
     const csvFiles = document.getElementById('csv-input').files;
@@ -264,16 +524,20 @@
     resultsEl.style.display = 'none';
 
     try {
-      const fd = new FormData();
-      if (csvFiles.length) fd.append('csv', csvFiles[0]);
-      for (const f of mhtFiles) fd.append('mht', f);
+      const realised = csvFiles.length
+        ? parseCSV(await readFile(csvFiles[0]))
+        : null;
 
-      const resp = await fetch('/api/analyse', { method: 'POST', body: fd });
-      const data = await resp.json();
+      const dividend = mhtFiles.length
+        ? mergeMHTs(await Promise.all(Array.from(mhtFiles).map(readFile)))
+        : null;
 
-      if (!resp.ok) throw new Error(data.error || '伺服器錯誤');
+      const combinedReturn = (realised?.totalPnl ?? 0) + (dividend?.totalCash ?? 0);
+      const dividendSharePct = combinedReturn > 0 && dividend
+        ? parseFloat((dividend.totalCash / combinedReturn * 100).toFixed(1))
+        : 0;
 
-      renderResults(data);
+      renderResults({ realised, dividend, combinedReturn, dividendSharePct });
       resultsEl.style.display = 'block';
       resultsEl.scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
@@ -290,11 +554,20 @@
     el.style.display = 'block';
   }
 
-  // ── 渲染結果 ───────────────────────────────────────────────
-  function fmt(n) { return Math.round(n).toLocaleString('zh-TW'); }
-  function fmtSign(n) { return (n >= 0 ? '+' : '') + fmt(n); }
-  function fmtRate(n) { return (n >= 0 ? '+' : '') + n + '%'; }
-  function signClass(n) { return n >= 0 ? 'pos' : 'neg'; }
+  // ══════════════════════════════════════════════════════════
+  // 渲染結果
+  // ══════════════════════════════════════════════════════════
+  function fmt(n)      { return Math.round(n).toLocaleString('zh-TW'); }
+  function fmtSign(n)  { return (n >= 0 ? '+' : '') + fmt(n); }
+  function fmtRate(n)  { return (n >= 0 ? '+' : '') + n + '%'; }
+  function signClass(n){ return n >= 0 ? 'pos' : 'neg'; }
+
+  function statCard(label, value, cls = '') {
+    return `<div class="stat-card">
+      <div class="label">${label}</div>
+      <div class="value ${cls}">${value}</div>
+    </div>`;
+  }
 
   function renderResults(d) {
     const el = document.getElementById('results');
@@ -385,21 +658,14 @@
     if (d.realised || d.dividend) {
       html += `<div class="section-title">含息總報酬</div>`;
       html += `<div class="summary-grid">`;
-      if (d.realised)  html += statCard('已實現價差', fmtSign(d.realised.totalPnl) + ' 元', signClass(d.realised.totalPnl));
-      if (d.dividend)  html += statCard('現金股息', '+' + fmt(d.dividend.totalCash) + ' 元', 'pos');
+      if (d.realised) html += statCard('已實現價差', fmtSign(d.realised.totalPnl) + ' 元', signClass(d.realised.totalPnl));
+      if (d.dividend) html += statCard('現金股息', '+' + fmt(d.dividend.totalCash) + ' 元', 'pos');
       html += statCard('含息總報酬', fmtSign(d.combinedReturn) + ' 元', signClass(d.combinedReturn));
       if (d.realised && d.dividend) html += statCard('股息佔比', d.dividendSharePct + '%');
       html += `</div>`;
     }
 
     el.innerHTML = html;
-  }
-
-  function statCard(label, value, cls = '') {
-    return `<div class="stat-card">
-      <div class="label">${label}</div>
-      <div class="value ${cls}">${value}</div>
-    </div>`;
   }
 </script>
 </body>

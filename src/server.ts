@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
-app.use(express.static(join(__dirname, '../public')));
+app.use(express.static(join(__dirname, process.env.NODE_ENV === 'production' ? '.' : '../public')));
 
 app.post(
   '/api/analyse',

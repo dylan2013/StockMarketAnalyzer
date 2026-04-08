@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>股市損益分析</title>
+  <title>股市損益分析(國泰樹精靈)</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -15,34 +15,6 @@
       padding: 2rem 1rem;
     }
 
-    /* ── 頁籤 ── */
-    .tabs {
-      display: flex;
-      justify-content: center;
-      gap: 0.5rem;
-      margin-bottom: 2rem;
-    }
-    .tab-btn {
-      padding: 0.55rem 1.4rem;
-      border: 2px solid #1a56db;
-      border-radius: 8px;
-      background: transparent;
-      color: #1a56db;
-      font-size: 0.95rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s;
-    }
-    .tab-btn.active {
-      background: #1a56db;
-      color: #ffffff;
-    }
-    .tab-btn:hover:not(.active) {
-      background: #eef3fd;
-    }
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
-
     h1 {
       text-align: center;
       font-size: 1.6rem;
@@ -50,44 +22,6 @@
       color: #1a56db;
       margin-bottom: 2rem;
       letter-spacing: 0.05em;
-    }
-
-    /* ── 說明頁 ── */
-    .guide-card {
-      background: #ffffff;
-      border: 1px solid #d1d9e6;
-      border-radius: 12px;
-      padding: 1.8rem 2rem;
-      max-width: 760px;
-      margin: 0 auto 2rem;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    }
-    .guide-card h2 {
-      font-size: 1.1rem;
-      font-weight: 700;
-      color: #1a56db;
-      border-left: 4px solid #1a56db;
-      padding-left: 0.8rem;
-      margin-bottom: 1rem;
-    }
-    .guide-card p {
-      font-size: 0.9rem;
-      color: #475569;
-      line-height: 1.7;
-      margin-bottom: 1rem;
-    }
-    .guide-card img {
-      width: 100%;
-      border-radius: 8px;
-      border: 1px solid #d1d9e6;
-      margin-top: 0.5rem;
-      margin-bottom: 1.2rem;
-    }
-    .guide-card .coming-soon {
-      text-align: center;
-      padding: 3rem 1rem;
-      color: #94a3b8;
-      font-size: 1rem;
     }
 
     .upload-card {
@@ -140,33 +74,21 @@
       word-break: break-all;
     }
 
-    .btn-row {
-      display: flex;
-      gap: 0.6rem;
-      margin-top: 0.4rem;
-    }
-    .btn-row button {
-      flex: 1;
+    button[type="submit"] {
+      width: 100%;
       padding: 0.8rem;
+      background: #1a56db;
+      color: #ffffff;
       font-size: 1rem;
       font-weight: 700;
       border: none;
       border-radius: 8px;
       cursor: pointer;
       transition: opacity 0.2s;
+      margin-top: 0.4rem;
     }
-    .btn-row button:disabled { opacity: 0.4; cursor: not-allowed; }
-    #submit-btn {
-      background: #1a56db;
-      color: #ffffff;
-    }
-    #submit-btn:hover:not(:disabled) { opacity: 0.88; }
-    #demo-btn {
-      background: #f1f5f9;
-      color: #1a56db;
-      border: 2px solid #1a56db;
-    }
-    #demo-btn:hover:not(:disabled) { background: #eef3fd; }
+    button[type="submit"]:hover { opacity: 0.88; }
+    button[type="submit"]:disabled { opacity: 0.4; cursor: not-allowed; }
 
     #error-msg {
       color: #b91c1c;
@@ -258,15 +180,6 @@
 
 <h1>股市損益分析</h1>
 
-<div class="tabs">
-  <button class="tab-btn active" onclick="switchTab('analyse', this)">股市損益分析</button>
-  <button class="tab-btn" onclick="switchTab('csv-guide', this)">CSV 說明</button>
-  <button class="tab-btn" onclick="switchTab('mht-guide', this)">MHT 說明</button>
-</div>
-
-<!-- 頁籤一：分析工具 -->
-<div id="tab-analyse" class="tab-panel active">
-
 <form id="upload-form">
   <div class="upload-card">
     <div class="field">
@@ -285,53 +198,12 @@
         <div class="filenames" id="mht-names"></div>
       </div>
     </div>
-    <div class="btn-row">
-      <button type="submit" id="submit-btn">開始分析</button>
-      <button type="button" id="demo-btn">範例</button>
-    </div>
+    <button type="submit" id="submit-btn">開始分析</button>
   </div>
 </form>
 
 <div id="error-msg"></div>
 <div id="results"></div>
-
-</div><!-- /tab-analyse -->
-
-<!-- 頁籤二：CSV 說明 -->
-<div id="tab-csv-guide" class="tab-panel">
-  <div class="guide-card">
-    <h2>如何取得已實現損益 .CSV</h2>
-    <p>使用「樹精靈」App，點擊「帳務」→「已實現」→「篩選」按鈕。</p>
-    <img src="Image_1/圖片1.jpg" alt="CSV 說明圖 1" />
-    <p>點擊「選擇區間」→「指定（起訖日）」。查詢區間最長為 5 年；若在上午 13:30 前執行，當天僅能查詢 1 年。</p>
-    <img src="Image_1/圖片2.jpg" alt="CSV 說明圖 2" />
-    <p>查詢完成後，點擊「匯出」將結果匯出。</p>
-    <img src="Image_1/圖片3.jpg" alt="CSV 說明圖 3" />
-    <p>匯出方式可選擇「Line 分享」，分享至特定 Line 帳號，再從 Line 下載『.csv檔案』至電腦。</p>
-    <img src="Image_1/圖片4.jpg" alt="CSV 說明圖 4" />
-    <p>以下為 Excel 內容範例，確認欄位正確後即可上傳。</p>
-    <img src="Image_1/圖片5.png" alt="CSV 說明圖 5" />
-  </div>
-</div>
-
-<!-- 頁籤三：MHT 說明 -->
-<div id="tab-mht-guide" class="tab-panel">
-  <div class="guide-card">
-    <h2>如何取得配息紀錄 .MHT</h2>
-    <p>使用國泰證券 App，進入「我的」→「配股配息」。</p>
-    <img src="Image_2/圖片1.jpg" alt="MHT 說明圖 1" />
-    <p>點擊「區間篩選」按鈕。</p>
-    <img src="Image_2/圖片2.jpg" alt="MHT 說明圖 2" />
-    <p>選擇查詢區間，建議以 3 年為單位分批操作（最早僅能查詢至 2018 年）。</p>
-    <img src="Image_2/圖片3.jpg" alt="MHT 說明圖 3" />
-    <p>點擊右上角「使用瀏覽器開啟」，以便保存畫面內容『.mht』。</p>
-    <img src="Image_2/圖片4.jpg" alt="MHT 說明圖 4" />
-    <p>選擇「使用 Chrome 瀏覽器」開啟。</p>
-    <img src="Image_2/圖片5.jpg" alt="MHT 說明圖 5" />
-    <p>在 Chrome 中點擊右上角選單，再點擊「下載」按鈕，將檔案儲存至 Download 資料夾『.mht』。</p>
-    <img src="Image_2/圖片6.jpg" alt="MHT 說明圖 6" />
-  </div>
-</div>
 
 <script>
   // ── 拖曳 & 選擇檔案顯示 ────────────────────────────────────
@@ -675,51 +547,6 @@
       btn.textContent = '開始分析';
     }
   });
-
-  document.getElementById('demo-btn').addEventListener('click', async () => {
-    const demoBtn    = document.getElementById('demo-btn');
-    const submitBtn  = document.getElementById('submit-btn');
-    const errEl      = document.getElementById('error-msg');
-    const resultsEl  = document.getElementById('results');
-
-    demoBtn.disabled   = true;
-    submitBtn.disabled = true;
-    demoBtn.textContent = '載入中…';
-    errEl.style.display = 'none';
-    resultsEl.style.display = 'none';
-
-    try {
-      const [csvText, mhtText] = await Promise.all([
-        fetch('樹精靈_證券已實現.csv').then(r => { if (!r.ok) throw new Error('無法載入範例 CSV'); return r.text(); }),
-        fetch('國泰證券_配股配息.mht').then(r => { if (!r.ok) throw new Error('無法載入範例 MHT'); return r.text(); }),
-      ]);
-
-      const realised  = parseCSV(csvText);
-      const dividend  = mergeMHTs([mhtText]);
-
-      const combinedReturn = (realised?.totalPnl ?? 0) + (dividend?.totalCash ?? 0);
-      const dividendSharePct = combinedReturn > 0 && dividend
-        ? parseFloat((dividend.totalCash / combinedReturn * 100).toFixed(1))
-        : 0;
-
-      renderResults({ realised, dividend, combinedReturn, dividendSharePct });
-      resultsEl.style.display = 'block';
-      resultsEl.scrollIntoView({ behavior: 'smooth' });
-    } catch (err) {
-      showError(err.message);
-    } finally {
-      demoBtn.disabled   = false;
-      submitBtn.disabled = false;
-      demoBtn.textContent = '範例';
-    }
-  });
-
-  function switchTab(name, btn) {
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById('tab-' + name).classList.add('active');
-    btn.classList.add('active');
-  }
 
   function showError(msg) {
     const el = document.getElementById('error-msg');

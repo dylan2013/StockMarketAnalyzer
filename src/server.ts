@@ -3,7 +3,7 @@ import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { analyse } from './index.js';
-import { parseCSV } from './parseCSV.js';
+import { parseCSV, mergeCSVs } from './parseCSV.js';
 import { mergeMHTs } from './parseMHT.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -16,18 +16,20 @@ app.use(express.static(join(__dirname, process.env.NODE_ENV === 'production' ? '
 app.post(
   '/api/analyse',
   upload.fields([
-    { name: 'csv', maxCount: 1 },
+    { name: 'csv', maxCount: 20 },
     { name: 'mht', maxCount: 20 },
   ]),
   (req, res) => {
     try {
       const files = req.files as Record<string, Express.Multer.File[]> | undefined;
 
-      const csvFile  = files?.['csv']?.[0];
+      const csvFiles = files?.['csv'] ?? [];
       const mhtFiles = files?.['mht'] ?? [];
 
-      const realised = csvFile
-        ? parseCSV(csvFile.buffer.toString('utf-8'))
+      const realised = csvFiles.length
+        ? csvFiles.length === 1
+          ? parseCSV(csvFiles[0].buffer.toString('utf-8'))
+          : mergeCSVs(csvFiles.map(f => f.buffer.toString('utf-8')))
         : null;
 
       const dividend = mhtFiles.length

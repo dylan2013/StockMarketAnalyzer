@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(yarn add:*)",
-      "Bash(yarn build:*)"
+      "Bash(yarn build:*)",
+      "Bash(npx tsc:*)"
     ],
     "additionalDirectories": [
       "/Users/dylan/Github/StockMarketAnalyzer/public"

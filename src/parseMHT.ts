@@ -146,20 +146,20 @@ function dedup(records: DividendRecord[]): DividendRecord[] {
 function summarise(records: DividendRecord[]): DividendResult {
   let totalCash = 0;
   let totalStock = 0;
-  const stockMap = new Map<string, { name: string; cash: number; stock: number }>();
-  const yearMap  = new Map<string, { cash: number }>();
+  const stockMap = new Map<string, { name: string; cash: number; stock: number; records: DividendRecord[] }>();
+  const yearMap  = new Map<string, { cash: number; records: DividendRecord[] }>();
 
   for (const r of records) {
     totalCash  += r.cash;
     totalStock += r.stockDiv;
 
-    const s = stockMap.get(r.code) ?? { name: r.name, cash: 0, stock: 0 };
-    s.cash += r.cash; s.stock += r.stockDiv;
+    const s = stockMap.get(r.code) ?? { name: r.name, cash: 0, stock: 0, records: [] };
+    s.cash += r.cash; s.stock += r.stockDiv; s.records.push(r);
     stockMap.set(r.code, s);
 
     const year = r.date.slice(0, 4);
-    const y = yearMap.get(year) ?? { cash: 0 };
-    y.cash += r.cash;
+    const y = yearMap.get(year) ?? { cash: 0, records: [] };
+    y.cash += r.cash; y.records.push(r);
     yearMap.set(year, y);
   }
 
@@ -172,12 +172,17 @@ function summarise(records: DividendRecord[]): DividendResult {
       shareRatio: totalCash > 0
         ? parseFloat((v.cash / totalCash * 100).toFixed(1))
         : 0,
+      records:    v.records.sort((a, b) => a.date.localeCompare(b.date)),
     }))
     .sort((a, b) => b.totalCash - a.totalCash);
 
   const byYear: DividendYearSummary[] = [...yearMap.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([year, v]) => ({ year, totalCash: Math.round(v.cash) }));
+    .map(([year, v]) => ({
+      year,
+      totalCash: Math.round(v.cash),
+      records:   v.records.sort((a, b) => a.date.localeCompare(b.date)),
+    }));
 
   return {
     totalCash:   Math.round(totalCash),

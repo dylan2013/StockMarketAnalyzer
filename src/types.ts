@@ -2,13 +2,17 @@
 
 export interface RealisedRow {
   name: string;
-  date: string;       // YYYY-MM-DD
+  date: string;       // YYYY-MM-DD（賣出日期）
   shares: number;
   pnl: number;
   buyAmount: number;
   sellAmount: number;
   fee: number;
   tax: number;
+  buyDate: string;    // YYYY-MM-DD
+  sellDate: string;   // YYYY-MM-DD
+  buyPrice: number;
+  sellPrice: number;
 }
 
 export interface StockSummary {
@@ -17,6 +21,7 @@ export interface StockSummary {
   pnl: number;
   buyAmount: number;
   returnRate: number; // %
+  avgHoldDays: number; // 平均持有天數
 }
 
 export interface YearSummary {
@@ -37,6 +42,7 @@ export interface RealisedResult {
   returnRate: number;
   byStock: StockSummary[];
   byYear: YearSummary[];
+  rows: RealisedRow[];  // 原始每筆交易，供明細展開用
 }
 
 // ── 配股配息 ──────────────────────────────────────────────────
@@ -55,11 +61,13 @@ export interface DividendStockSummary {
   totalCash: number;
   totalStock: number;
   shareRatio: number; // % of total cash
+  records: DividendRecord[];  // 該股票所有配息明細
 }
 
 export interface DividendYearSummary {
   year: string;
   totalCash: number;
+  records: DividendRecord[];  // 該年所有配息明細
 }
 
 export interface DividendResult {

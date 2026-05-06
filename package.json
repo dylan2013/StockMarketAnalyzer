@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "rm -rf dist && esbuild src/server.ts --bundle --platform=node --format=esm --minify --define:process.env.NODE_ENV='\"production\"' --outfile=dist/server.js && cp -r public/* dist/",
+    "build": "rm -rf dist && esbuild src/server.ts --bundle --platform=node --format=esm --minify --define:process.env.NODE_ENV='\"production\"' --outfile=dist/server.js && cp -r docs/* dist/",
     "start": "tsx src/server.ts",
     "dev": "tsx src/index.ts",
     "web": "tsx src/server.ts"

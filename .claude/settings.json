@@ -3,7 +3,8 @@
     "allow": [
       "Bash(yarn add:*)",
       "Bash(yarn build:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(gh api *)"
     ],
     "additionalDirectories": [
       "/Users/dylan/Github/StockMarketAnalyzer/public"

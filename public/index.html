@@ -433,14 +433,16 @@
         const diff = Date.parse(row.sellDate) - Date.parse(row.buyDate);
         return diff > 0 ? Math.round(diff / 86400000) : 0;
       })();
-      const s = stockMap.get(row.name) ?? { pnl: 0, buyAmount: 0, count: 0, totalHoldDays: 0 };
+      const s = stockMap.get(row.name) ?? { pnl: 0, buyAmount: 0, count: 0, totalHoldDays: 0, fee: 0, tax: 0 };
       s.pnl += row.pnl; s.buyAmount += row.buyAmount; s.count++; s.totalHoldDays += days;
+      s.fee += row.fee; s.tax += row.tax;
       stockMap.set(row.name, s);
 
       const year = row.date.slice(0, 4);
       if (/^\d{4}$/.test(year)) {
-        const y = yearMap.get(year) ?? { pnl: 0, buyAmount: 0, count: 0 };
+        const y = yearMap.get(year) ?? { pnl: 0, buyAmount: 0, count: 0, fee: 0, tax: 0 };
         y.pnl += row.pnl; y.buyAmount += row.buyAmount; y.count++;
+        y.fee += row.fee; y.tax += row.tax;
         yearMap.set(year, y);
       }
     }
@@ -452,6 +454,8 @@
         buyAmount:    Math.round(v.buyAmount),
         returnRate:   v.buyAmount ? parseFloat((v.pnl / v.buyAmount * 100).toFixed(2)) : 0,
         avgHoldDays:  Math.round(v.totalHoldDays / v.count),
+        fee:          Math.round(v.fee),
+        tax:          Math.round(v.tax),
       }))
       .sort((a, b) => b.pnl - a.pnl);
 
@@ -462,6 +466,8 @@
         pnl:        Math.round(v.pnl),
         buyAmount:  Math.round(v.buyAmount),
         returnRate: v.buyAmount ? parseFloat((v.pnl / v.buyAmount * 100).toFixed(2)) : 0,
+        fee:        Math.round(v.fee),
+        tax:        Math.round(v.tax),
       }));
 
     return {
@@ -749,19 +755,23 @@
             <td>${row.shares}</td>
             <td>${row.buyPrice}</td><td>${row.sellPrice}</td>
             <td class="${signClass(row.pnl)}">${fmtSign(row.pnl)}</td>
+            <td>${fmt(row.fee)}</td>
+            <td>${fmt(row.tax)}</td>
           </tr>`).join('');
           const subTable = `<table><thead><tr>
-            <th>股票</th><th>買進日</th><th>賣出日</th><th>股數</th><th>買進價</th><th>賣出價</th><th>損益（元）</th>
+            <th>股票</th><th>買進日</th><th>賣出日</th><th>股數</th><th>買進價</th><th>賣出價</th><th>損益（元）</th><th>手續費（元）</th><th>交易稅（元）</th>
           </tr></thead><tbody>${subRows}</tbody></table>`;
           tbody += `<tr class="expandable">
             <td>${y.year}</td>
             <td class="${signClass(y.pnl)}">${fmtSign(y.pnl)}</td>
             <td class="${signClass(y.returnRate)}">${fmtRate(y.returnRate)}</td>
+            <td>${fmt(y.fee)}</td>
+            <td>${fmt(y.tax)}</td>
             <td>${y.count}</td>
-          </tr>${detailRow(4, subTable)}`;
+          </tr>${detailRow(6, subTable)}`;
         }
         html += collapsible('年度損益',
-          `<table><thead><tr><th>年份</th><th>損益（元）</th><th>報酬率</th><th>筆數</th></tr></thead><tbody>${tbody}</tbody></table>`
+          `<table><thead><tr><th>年份</th><th>損益（元）</th><th>報酬率</th><th>手續費（元）</th><th>交易稅（元）</th><th>筆數</th></tr></thead><tbody>${tbody}</tbody></table>`
         );
       }
 
@@ -774,21 +784,25 @@
             <td>${row.shares}</td>
             <td>${row.buyPrice}</td><td>${row.sellPrice}</td>
             <td class="${signClass(row.pnl)}">${fmtSign(row.pnl)}</td>
+            <td>${fmt(row.fee)}</td>
+            <td>${fmt(row.tax)}</td>
             <td>${fmtDays(holdDays(row.buyDate, row.sellDate))}</td>
           </tr>`).join('');
           const subTable = `<table><thead><tr>
-            <th>買進日</th><th>賣出日</th><th>股數</th><th>買進價</th><th>賣出價</th><th>損益（元）</th><th>持有</th>
+            <th>買進日</th><th>賣出日</th><th>股數</th><th>買進價</th><th>賣出價</th><th>損益（元）</th><th>手續費（元）</th><th>交易稅（元）</th><th>持有</th>
           </tr></thead><tbody>${subRows}</tbody></table>`;
           tbody += `<tr class="expandable">
             <td>${s.name}</td>
             <td class="${signClass(s.pnl)}">${fmtSign(s.pnl)}</td>
             <td class="${signClass(s.returnRate)}">${fmtRate(s.returnRate)}</td>
+            <td>${fmt(s.fee)}</td>
+            <td>${fmt(s.tax)}</td>
             <td>${fmtDays(s.avgHoldDays)}</td>
             <td>${s.count}</td>
-          </tr>${detailRow(5, subTable)}`;
+          </tr>${detailRow(7, subTable)}`;
         }
         html += collapsible('個股損益',
-          `<table><thead><tr><th>股票</th><th>損益（元）</th><th>報酬率</th><th>平均持有</th><th>筆數</th></tr></thead><tbody>${tbody}</tbody></table>`
+          `<table><thead><tr><th>股票</th><th>損益（元）</th><th>報酬率</th><th>手續費（元）</th><th>交易稅（元）</th><th>平均持有</th><th>筆數</th></tr></thead><tbody>${tbody}</tbody></table>`
         );
       }
     }

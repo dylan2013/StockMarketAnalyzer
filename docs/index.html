@@ -185,7 +185,21 @@
       padding: 0.6rem 1rem;
       margin: 2.2rem 0 1rem;
       letter-spacing: 0.04em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
+    .section-title-main .group-toggle {
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      opacity: 0.95;
+    }
+    .section-title-main .group-toggle input { vertical-align: middle; cursor: pointer; }
     .section-title-main.combined {
       background: #1a56db;
       color: #ffffff;
@@ -269,27 +283,11 @@
 <form id="upload-form">
   <div class="upload-card">
     <div class="field">
-      <label>已實現損益 CSV</label>
-      <div class="file-drop" id="csv-drop">
-        <input type="file" name="csv" accept=".csv" multiple id="csv-input" />
-        <div class="hint">點擊或拖曳 .csv 檔案（可多檔，重複資料自動排除）</div>
-        <div class="filenames" id="csv-names"></div>
-      </div>
-    </div>
-    <div class="field">
-      <label>未實現損益 CSV（選填）</label>
-      <div class="file-drop" id="unrealised-drop">
-        <input type="file" name="unrealised" accept=".csv" id="unrealised-input" />
-        <div class="hint">點擊或拖曳 .csv 檔案（單檔）</div>
-        <div class="filenames" id="unrealised-names"></div>
-      </div>
-    </div>
-    <div class="field">
-      <label>配息紀錄 MHT（可多選）</label>
-      <div class="file-drop" id="mht-drop">
-        <input type="file" name="mht" accept=".mht" multiple id="mht-input" />
-        <div class="hint">點擊或拖曳 .mht 檔案（可多檔）</div>
-        <div class="filenames" id="mht-names"></div>
+      <label>選擇資料夾</label>
+      <div class="file-drop" id="folder-drop">
+        <input type="file" id="folder-input" webkitdirectory directory multiple />
+        <div class="hint">點擊或拖曳整個資料夾（自動分類「已實現」「未實現」「配息」檔案）</div>
+        <div class="filenames" id="folder-summary"></div>
       </div>
     </div>
     <button type="submit" id="submit-btn">開始分析</button>
@@ -299,52 +297,78 @@
 <div id="error-msg"></div>
 <div id="results-toolbar" style="max-width: 900px; margin: 0 auto 0.5rem; display: none; text-align: right;">
   <label style="font-size: 0.85rem; color: #475569; cursor: pointer; user-select: none;">
-    <input type="checkbox" id="expand-all" checked style="vertical-align: middle; margin-right: 0.4rem;" />
+    <input type="checkbox" id="expand-all" style="vertical-align: middle; margin-right: 0.4rem;" />
     全部展開
   </label>
 </div>
 <div id="results"></div>
 
 <script>
-  // ── 拖曳 & 選擇檔案顯示 ────────────────────────────────────
-  function setupDrop(dropEl, inputEl, nameEl) {
-    inputEl.addEventListener('change', () => showNames(inputEl.files, nameEl));
-    dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('drag-over'); });
-    dropEl.addEventListener('dragleave', () => dropEl.classList.remove('drag-over'));
-    dropEl.addEventListener('drop', e => {
-      e.preventDefault();
-      dropEl.classList.remove('drag-over');
-      const dt = e.dataTransfer;
-      if (dt.files.length) {
-        const list = new DataTransfer();
-        for (const f of dt.files) list.items.add(f);
-        inputEl.files = list.files;
-        showNames(inputEl.files, nameEl);
-      }
-    });
+  // ── 檔名分類 ────────────────────────────────────────────────
+  function classifyFiles(files) {
+    const buckets = { realised: [], unrealised: [], dividend: [], ignored: [] };
+    for (const f of files) {
+      const name = f.name;
+      const lower = name.toLowerCase();
+      if (lower.endsWith('.csv') && name.includes('未實現')) buckets.unrealised.push(f);
+      else if (lower.endsWith('.csv') && name.includes('已實現')) buckets.realised.push(f);
+      else if (lower.endsWith('.mht') && (name.includes('配息') || name.includes('配股'))) buckets.dividend.push(f);
+      else buckets.ignored.push(f);
+    }
+    return buckets;
   }
 
-  function showNames(files, nameEl) {
-    nameEl.textContent = files.length
-      ? Array.from(files).map(f => f.name).join('、')
+  let pendingFiles = [];
+
+  function renderSummary(files) {
+    const summaryEl = document.getElementById('folder-summary');
+    if (!files.length) { summaryEl.innerHTML = ''; return; }
+    const b = classifyFiles(files);
+    const part = (label, arr) => arr.length
+      ? `<div><strong>${label}（${arr.length}）：</strong>${arr.map(f => f.name).join('、')}</div>`
       : '';
+    summaryEl.innerHTML =
+      part('已實現', b.realised) +
+      part('未實現', b.unrealised) +
+      part('配息', b.dividend) +
+      (b.ignored.length ? `<div style="color:#94a3b8;">未分類（忽略）：${b.ignored.map(f => f.name).join('、')}</div>` : '');
   }
 
-  setupDrop(
-    document.getElementById('csv-drop'),
-    document.getElementById('csv-input'),
-    document.getElementById('csv-names')
-  );
-  setupDrop(
-    document.getElementById('unrealised-drop'),
-    document.getElementById('unrealised-input'),
-    document.getElementById('unrealised-names')
-  );
-  setupDrop(
-    document.getElementById('mht-drop'),
-    document.getElementById('mht-input'),
-    document.getElementById('mht-names')
-  );
+  // ── 資料夾選擇 / 拖曳 ──────────────────────────────────────
+  const folderDrop  = document.getElementById('folder-drop');
+  const folderInput = document.getElementById('folder-input');
+
+  folderInput.addEventListener('change', () => {
+    pendingFiles = Array.from(folderInput.files);
+    renderSummary(pendingFiles);
+  });
+
+  folderDrop.addEventListener('dragover', e => { e.preventDefault(); folderDrop.classList.add('drag-over'); });
+  folderDrop.addEventListener('dragleave', () => folderDrop.classList.remove('drag-over'));
+  folderDrop.addEventListener('drop', async e => {
+    e.preventDefault();
+    folderDrop.classList.remove('drag-over');
+    const items = e.dataTransfer.items;
+    const collected = [];
+    const walk = async (entry) => {
+      if (entry.isFile) {
+        await new Promise(res => entry.file(f => { collected.push(f); res(); }));
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        const entries = await new Promise(res => reader.readEntries(res));
+        for (const child of entries) await walk(child);
+      }
+    };
+    for (const item of items) {
+      const entry = item.webkitGetAsEntry?.();
+      if (entry) await walk(entry);
+    }
+    if (!collected.length && e.dataTransfer.files.length) {
+      for (const f of e.dataTransfer.files) collected.push(f);
+    }
+    pendingFiles = collected;
+    renderSummary(pendingFiles);
+  });
 
   // ══════════════════════════════════════════════════════════
   // CSV 解析
@@ -721,12 +745,17 @@
     const errEl     = document.getElementById('error-msg');
     const resultsEl = document.getElementById('results');
 
-    const csvFiles = document.getElementById('csv-input').files;
-    const mhtFiles = document.getElementById('mht-input').files;
-    const unrealisedFiles = document.getElementById('unrealised-input').files;
+    if (!pendingFiles.length) {
+      showError('請選擇或拖曳一個資料夾。');
+      return;
+    }
+    const buckets = classifyFiles(pendingFiles);
+    const csvFiles = buckets.realised;
+    const mhtFiles = buckets.dividend;
+    const unrealisedFiles = buckets.unrealised;
 
     if (!csvFiles.length && !mhtFiles.length && !unrealisedFiles.length) {
-      showError('請至少上傳一個檔案。');
+      showError('資料夾內沒有可辨識的檔案（檔名需包含「已實現」「未實現」「配息」）。');
       return;
     }
 
@@ -816,7 +845,10 @@
     // ── 2. 未實現損益 ─────────────────────────────────────────
     if (d.unrealised) {
       const u = d.unrealised;
-      html += `<div class="section-title-main realised" style="background:#7c3aed;">未實現損益</div>`;
+      html += `<div class="section-title-main realised" data-group="unrealised" style="background:#7c3aed;">
+        <span>未實現損益</span>
+        <label class="group-toggle"><input type="checkbox" data-group-toggle="unrealised" />全部展開</label>
+      </div>`;
       html += `<div class="summary-grid">
         ${statCard('預估損益', fmtSign(u.totalPnl) + ' 元', signClass(u.totalPnl))}
         ${statCard('整體報酬率', fmtRate(u.returnRate), signClass(u.returnRate))}
@@ -849,7 +881,10 @@
     // ── 3. 已實現損益 ─────────────────────────────────────────
     if (d.realised) {
       const r = d.realised;
-      html += `<div class="section-title-main realised">已實現損益</div>`;
+      html += `<div class="section-title-main realised" data-group="realised">
+        <span>已實現損益</span>
+        <label class="group-toggle"><input type="checkbox" data-group-toggle="realised" />全部展開</label>
+      </div>`;
       html += `<div class="summary-grid">
         ${statCard('總損益', fmtSign(r.totalPnl) + ' 元', signClass(r.totalPnl))}
         ${statCard('整體報酬率', fmtRate(r.returnRate), signClass(r.returnRate))}
@@ -925,7 +960,10 @@
     // ── 3. 配股配息 ───────────────────────────────────────────
     if (d.dividend) {
       const div = d.dividend;
-      html += `<div class="section-title-main dividend">配股配息</div>`;
+      html += `<div class="section-title-main dividend" data-group="dividend">
+        <span>配股配息</span>
+        <label class="group-toggle"><input type="checkbox" data-group-toggle="dividend" />全部展開</label>
+      </div>`;
       html += `<div class="summary-grid">
         ${statCard('累積現金股息', '+' + fmt(div.totalCash) + ' 元', 'pos')}
         ${statCard('累積配股', div.totalStock + ' 股')}
@@ -1001,15 +1039,46 @@
       });
     });
 
+    // ── 收集每個 group 範圍內的元素 ─────────────────────────
+    const groupNodes = (group) => {
+      const start = el.querySelector(`.section-title-main[data-group="${group}"]`);
+      if (!start) return [];
+      const nodes = [];
+      let n = start.nextElementSibling;
+      while (n && !n.classList.contains('section-title-main')) {
+        nodes.push(n);
+        n = n.nextElementSibling;
+      }
+      return nodes;
+    };
+    const applyExpandTo = (nodes, open) => {
+      nodes.forEach(node => {
+        if (node.classList.contains('section-title')) node.classList.toggle('open', open);
+        if (node.classList.contains('collapsible-body')) node.classList.toggle('open', open);
+        node.querySelectorAll?.('.section-title').forEach(t => t.classList.toggle('open', open));
+        node.querySelectorAll?.('.collapsible-body').forEach(b => b.classList.toggle('open', open));
+        node.querySelectorAll?.('tr.expandable').forEach(r => r.classList.toggle('expanded', open));
+        node.querySelectorAll?.('tr.detail-row').forEach(r => r.classList.toggle('open', open));
+      });
+    };
+
     // ── 全部展開 / 收合 ───────────────────────────────────────
     const expandAll = document.getElementById('expand-all');
+    const allGroups = ['unrealised', 'realised', 'dividend'];
     const applyExpand = (open) => {
-      el.querySelectorAll('.section-title').forEach(t => t.classList.toggle('open', open));
-      el.querySelectorAll('.collapsible-body').forEach(b => b.classList.toggle('open', open));
-      el.querySelectorAll('tr.expandable').forEach(r => r.classList.toggle('expanded', open));
-      el.querySelectorAll('tr.detail-row').forEach(r => r.classList.toggle('open', open));
+      allGroups.forEach(g => applyExpandTo(groupNodes(g), open));
+      el.querySelectorAll('[data-group-toggle]').forEach(cb => cb.checked = open);
     };
     expandAll.onchange = () => applyExpand(expandAll.checked);
+
+    // ── 各分類展開 / 收合 ─────────────────────────────────────
+    el.querySelectorAll('[data-group-toggle]').forEach(cb => {
+      cb.addEventListener('click', e => e.stopPropagation());
+      cb.addEventListener('change', () => {
+        applyExpandTo(groupNodes(cb.dataset.groupToggle), cb.checked);
+      });
+    });
+
     if (expandAll.checked) applyExpand(true);
   }
 

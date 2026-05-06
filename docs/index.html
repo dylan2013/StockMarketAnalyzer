@@ -277,6 +277,14 @@
       </div>
     </div>
     <div class="field">
+      <label>未實現損益 CSV（選填）</label>
+      <div class="file-drop" id="unrealised-drop">
+        <input type="file" name="unrealised" accept=".csv" id="unrealised-input" />
+        <div class="hint">點擊或拖曳 .csv 檔案（單檔）</div>
+        <div class="filenames" id="unrealised-names"></div>
+      </div>
+    </div>
+    <div class="field">
       <label>配息紀錄 MHT（可多選）</label>
       <div class="file-drop" id="mht-drop">
         <input type="file" name="mht" accept=".mht" multiple id="mht-input" />
@@ -289,6 +297,12 @@
 </form>
 
 <div id="error-msg"></div>
+<div id="results-toolbar" style="max-width: 900px; margin: 0 auto 0.5rem; display: none; text-align: right;">
+  <label style="font-size: 0.85rem; color: #475569; cursor: pointer; user-select: none;">
+    <input type="checkbox" id="expand-all" checked style="vertical-align: middle; margin-right: 0.4rem;" />
+    全部展開
+  </label>
+</div>
 <div id="results"></div>
 
 <script>
@@ -320,6 +334,11 @@
     document.getElementById('csv-drop'),
     document.getElementById('csv-input'),
     document.getElementById('csv-names')
+  );
+  setupDrop(
+    document.getElementById('unrealised-drop'),
+    document.getElementById('unrealised-input'),
+    document.getElementById('unrealised-names')
   );
   setupDrop(
     document.getElementById('mht-drop'),
@@ -501,6 +520,62 @@
   }
 
   // ══════════════════════════════════════════════════════════
+  // 未實現損益 CSV 解析
+  // ══════════════════════════════════════════════════════════
+  function parseUnrealisedCSV(raw) {
+    const text = raw.replace(/^﻿/, '');
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) throw new Error('未實現 CSV 內容不足。');
+
+    const headers = parseCSVLine(lines[0]);
+    const findIdx = keyword => headers.findIndex(h => h.includes(keyword));
+    const idx = {
+      name:       findIdx('股票名稱'),
+      shares:     findIdx('股數'),
+      avgPrice:   findIdx('成交均價'),
+      marketPrice:findIdx('市價'),
+      marketValue:findIdx('現值'),
+      cost:       findIdx('付出成本'),
+      pnl:        findIdx('預估損益'),
+      returnRate: findIdx('報酬率'),
+    };
+    if (idx.name === -1) throw new Error('找不到「股票名稱」欄位。請確認為券商匯出的未實現彙總 CSV。');
+
+    const rows = [];
+    let totalPnl = 0, totalValue = 0, totalCost = 0;
+    for (const line of lines.slice(1)) {
+      const cols = parseCSVLine(line);
+      const name = cols[idx.name] ?? '';
+      if (!name || name.startsWith('總')) continue;
+      const row = {
+        name,
+        shares:      cleanNum(cols[idx.shares]),
+        avgPrice:    cleanNum(cols[idx.avgPrice]),
+        marketPrice: cleanNum(cols[idx.marketPrice]),
+        marketValue: cleanNum(cols[idx.marketValue]),
+        cost:        cleanNum(cols[idx.cost]),
+        pnl:         cleanNum(cols[idx.pnl]),
+        returnRate:  cleanNum(cols[idx.returnRate]),
+      };
+      rows.push(row);
+      totalPnl   += row.pnl;
+      totalValue += row.marketValue;
+      totalCost  += row.cost;
+    }
+    if (rows.length === 0) throw new Error('未實現 CSV 沒有有效的持股資料。');
+
+    rows.sort((a, b) => b.pnl - a.pnl);
+    return {
+      rows,
+      totalPnl:    Math.round(totalPnl),
+      totalValue:  Math.round(totalValue),
+      totalCost:   Math.round(totalCost),
+      returnRate:  totalCost ? parseFloat((totalPnl / totalCost * 100).toFixed(2)) : 0,
+      stockCount:  rows.length,
+    };
+  }
+
+  // ══════════════════════════════════════════════════════════
   // MHT 解析（用瀏覽器 DOMParser 取代 node-html-parser）
   // ══════════════════════════════════════════════════════════
   const CODE_RE = /^[0-9]{4}[0-9A-Z]{0,2}$/;
@@ -648,9 +723,10 @@
 
     const csvFiles = document.getElementById('csv-input').files;
     const mhtFiles = document.getElementById('mht-input').files;
+    const unrealisedFiles = document.getElementById('unrealised-input').files;
 
-    if (!csvFiles.length && !mhtFiles.length) {
-      showError('請至少上傳一個 CSV 或 MHT 檔案。');
+    if (!csvFiles.length && !mhtFiles.length && !unrealisedFiles.length) {
+      showError('請至少上傳一個檔案。');
       return;
     }
 
@@ -668,13 +744,18 @@
         ? mergeMHTs(await Promise.all(Array.from(mhtFiles).map(readFile)))
         : null;
 
-      const combinedReturn = (realised?.totalPnl ?? 0) + (dividend?.totalCash ?? 0);
+      const unrealised = unrealisedFiles.length
+        ? parseUnrealisedCSV(await readFile(unrealisedFiles[0]))
+        : null;
+
+      const combinedReturn = (realised?.totalPnl ?? 0) + (unrealised?.totalPnl ?? 0) + (dividend?.totalCash ?? 0);
       const dividendSharePct = combinedReturn > 0 && dividend
         ? parseFloat((dividend.totalCash / combinedReturn * 100).toFixed(1))
         : 0;
 
-      renderResults({ realised, dividend, combinedReturn, dividendSharePct });
+      renderResults({ realised, unrealised, dividend, combinedReturn, dividendSharePct });
       resultsEl.style.display = 'block';
+      document.getElementById('results-toolbar').style.display = 'block';
       resultsEl.scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
       showError(err.message);
@@ -721,17 +802,51 @@
     let html = '';
 
     // ── 1. 含息總報酬（總覽，最上方）──────────────────────────
-    if (d.realised || d.dividend) {
+    if (d.realised || d.dividend || d.unrealised) {
       html += `<div class="section-title-main combined">含息總報酬</div>`;
       html += `<div class="summary-grid">`;
-      if (d.realised) html += statCard('已實現價差', fmtSign(d.realised.totalPnl) + ' 元', signClass(d.realised.totalPnl));
-      if (d.dividend) html += statCard('現金股息', '+' + fmt(d.dividend.totalCash) + ' 元', 'pos');
-      html += statCard('含息總報酬', fmtSign(d.combinedReturn) + ' 元', signClass(d.combinedReturn));
+      if (d.realised)   html += statCard('已實現價差', fmtSign(d.realised.totalPnl) + ' 元', signClass(d.realised.totalPnl));
+      if (d.unrealised) html += statCard('未實現損益', fmtSign(d.unrealised.totalPnl) + ' 元', signClass(d.unrealised.totalPnl));
+      if (d.dividend)   html += statCard('現金股息', '+' + fmt(d.dividend.totalCash) + ' 元', 'pos');
+      html += statCard('總報酬', fmtSign(d.combinedReturn) + ' 元', signClass(d.combinedReturn));
       if (d.realised && d.dividend) html += statCard('股息佔比', d.dividendSharePct + '%');
       html += `</div>`;
     }
 
-    // ── 2. 已實現損益 ─────────────────────────────────────────
+    // ── 2. 未實現損益 ─────────────────────────────────────────
+    if (d.unrealised) {
+      const u = d.unrealised;
+      html += `<div class="section-title-main realised" style="background:#7c3aed;">未實現損益</div>`;
+      html += `<div class="summary-grid">
+        ${statCard('預估損益', fmtSign(u.totalPnl) + ' 元', signClass(u.totalPnl))}
+        ${statCard('整體報酬率', fmtRate(u.returnRate), signClass(u.returnRate))}
+        ${statCard('總現值', fmt(u.totalValue) + ' 元')}
+        ${statCard('總成本', fmt(u.totalCost) + ' 元')}
+        ${statCard('持股檔數', u.stockCount + ' 檔')}
+      </div>`;
+
+      let tbody = '';
+      for (const row of u.rows) {
+        tbody += `<tr>
+          <td>${row.name}</td>
+          <td>${fmt(row.shares)}</td>
+          <td>${row.avgPrice}</td>
+          <td>${row.marketPrice}</td>
+          <td>${fmt(row.cost)}</td>
+          <td>${fmt(row.marketValue)}</td>
+          <td class="${signClass(row.pnl)}">${fmtSign(row.pnl)}</td>
+          <td class="${signClass(row.returnRate)}">${fmtRate(row.returnRate)}</td>
+        </tr>`;
+      }
+      html += collapsible('個股未實現',
+        `<table><thead><tr>
+          <th>股票</th><th>股數</th><th>成交均價</th><th>市價</th>
+          <th>付出成本（元）</th><th>現值（元）</th><th>預估損益（元）</th><th>報酬率</th>
+        </tr></thead><tbody>${tbody}</tbody></table>`
+      );
+    }
+
+    // ── 3. 已實現損益 ─────────────────────────────────────────
     if (d.realised) {
       const r = d.realised;
       html += `<div class="section-title-main realised">已實現損益</div>`;
@@ -885,6 +1000,17 @@
         row.classList.toggle('expanded', !isOpen);
       });
     });
+
+    // ── 全部展開 / 收合 ───────────────────────────────────────
+    const expandAll = document.getElementById('expand-all');
+    const applyExpand = (open) => {
+      el.querySelectorAll('.section-title').forEach(t => t.classList.toggle('open', open));
+      el.querySelectorAll('.collapsible-body').forEach(b => b.classList.toggle('open', open));
+      el.querySelectorAll('tr.expandable').forEach(r => r.classList.toggle('expanded', open));
+      el.querySelectorAll('tr.detail-row').forEach(r => r.classList.toggle('open', open));
+    };
+    expandAll.onchange = () => applyExpand(expandAll.checked);
+    if (expandAll.checked) applyExpand(true);
   }
 
   function holdDays(buyDate, sellDate) {

@@ -11,6 +11,9 @@ function fmt(n: number): string {
 function fmtSign(n: number): string {
   return (n >= 0 ? '+' : '') + fmt(n);
 }
+function fmtPrice(n: number): string {
+  return n.toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 // ── 主邏輯 ────────────────────────────────────────────────────
 export function analyse(options: {
@@ -57,7 +60,7 @@ export function printReport(result: OverallResult): void {
     console.log('\n  ─ 個股損益 ─');
     for (const s of r.byStock) {
       const sign = s.pnl >= 0 ? '+' : '';
-      console.log(`  ${s.name.padEnd(12)}：${fmtSign(s.pnl).padStart(10)} 元  ${sign}${s.returnRate}%  (${s.count} 筆)`);
+      console.log(`  ${s.name.padEnd(12)}：${fmtSign(s.pnl).padStart(10)} 元  ${sign}${s.returnRate}%  (${s.count} 筆)  買均 ${fmtPrice(s.buyAvgPrice)} / 賣均 ${fmtPrice(s.sellAvgPrice)}`);
     }
   }
 

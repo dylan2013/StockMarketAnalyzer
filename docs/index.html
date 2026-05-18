@@ -476,8 +476,9 @@
         const diff = Date.parse(row.sellDate) - Date.parse(row.buyDate);
         return diff > 0 ? Math.round(diff / 86400000) : 0;
       })();
-      const s = stockMap.get(row.name) ?? { pnl: 0, buyAmount: 0, count: 0, totalHoldDays: 0, fee: 0, tax: 0 };
-      s.pnl += row.pnl; s.buyAmount += row.buyAmount; s.count++; s.totalHoldDays += days;
+      const s = stockMap.get(row.name) ?? { pnl: 0, buyAmount: 0, sellAmount: 0, shares: 0, count: 0, totalHoldDays: 0, fee: 0, tax: 0 };
+      s.pnl += row.pnl; s.buyAmount += row.buyAmount; s.sellAmount += row.sellAmount;
+      s.shares += row.shares; s.count++; s.totalHoldDays += days;
       s.fee += row.fee; s.tax += row.tax;
       stockMap.set(row.name, s);
 
@@ -497,6 +498,8 @@
         buyAmount:    Math.round(v.buyAmount),
         returnRate:   v.buyAmount ? parseFloat((v.pnl / v.buyAmount * 100).toFixed(2)) : 0,
         avgHoldDays:  Math.round(v.totalHoldDays / v.count),
+        buyAvgPrice:  v.shares ? parseFloat((v.buyAmount / v.shares).toFixed(2)) : 0,
+        sellAvgPrice: v.shares ? parseFloat((v.sellAmount / v.shares).toFixed(2)) : 0,
         fee:          Math.round(v.fee),
         tax:          Math.round(v.tax),
       }))
@@ -804,6 +807,7 @@
   // 渲染結果
   // ══════════════════════════════════════════════════════════
   function fmt(n)      { return Math.round(n).toLocaleString('zh-TW'); }
+  function fmtPrice(n) { return n.toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function fmtSign(n)  { return (n >= 0 ? '+' : '') + fmt(n); }
   function fmtDays(d)  { if (!d) return '—'; if (d < 30) return d + ' 天'; if (d < 365) return Math.round(d / 30) + ' 個月'; return (d / 365).toFixed(1) + ' 年'; }
   function fmtRate(n)  { return (n >= 0 ? '+' : '') + n + '%'; }
@@ -898,7 +902,11 @@
       if (r.byYear.length) {
         let tbody = '';
         for (const y of r.byYear) {
-          const yearRows = r.rows.filter(row => row.date.startsWith(y.year));
+          const yearRows = r.rows.filter(row => row.date.startsWith(y.year))
+            .sort((a, b) =>
+              a.name.localeCompare(b.name) ||
+              b.sellDate.localeCompare(a.sellDate) ||
+              b.pnl - a.pnl);
           let subRows = yearRows.map(row => `<tr>
             <td>${row.name}</td>
             <td>${row.buyDate}</td><td>${row.sellDate}</td>
@@ -928,7 +936,10 @@
       if (r.byStock.length) {
         let tbody = '';
         for (const s of r.byStock) {
-          const stockRows = r.rows.filter(row => row.name === s.name);
+          const stockRows = r.rows.filter(row => row.name === s.name)
+            .sort((a, b) =>
+              b.sellDate.localeCompare(a.sellDate) ||
+              b.pnl - a.pnl);
           let subRows = stockRows.map(row => `<tr>
             <td>${row.buyDate}</td><td>${row.sellDate}</td>
             <td>${row.shares}</td>
@@ -945,14 +956,16 @@
             <td>${s.name}</td>
             <td class="${signClass(s.pnl)}">${fmtSign(s.pnl)}</td>
             <td class="${signClass(s.returnRate)}">${fmtRate(s.returnRate)}</td>
+            <td>${fmtPrice(s.buyAvgPrice)}</td>
+            <td>${fmtPrice(s.sellAvgPrice)}</td>
             <td>${fmt(s.fee)}</td>
             <td>${fmt(s.tax)}</td>
             <td>${fmtDays(s.avgHoldDays)}</td>
             <td>${s.count}</td>
-          </tr>${detailRow(7, subTable)}`;
+          </tr>${detailRow(9, subTable)}`;
         }
         html += collapsible('個股損益',
-          `<table><thead><tr><th>股票</th><th>損益（元）</th><th>報酬率</th><th>手續費（元）</th><th>交易稅（元）</th><th>平均持有</th><th>筆數</th></tr></thead><tbody>${tbody}</tbody></table>`
+          `<table><thead><tr><th>股票</th><th>損益（元）</th><th>報酬率</th><th>買進均價</th><th>賣出均價</th><th>手續費（元）</th><th>交易稅（元）</th><th>平均持有</th><th>筆數</th></tr></thead><tbody>${tbody}</tbody></table>`
         );
       }
     }
@@ -974,7 +987,11 @@
       if (div.byYear.length) {
         let tbody = '';
         for (const y of div.byYear) {
-          let subRows = y.records.map(r => `<tr>
+          let subRows = [...y.records]
+            .sort((a, b) =>
+              a.name.localeCompare(b.name) ||
+              b.date.localeCompare(a.date))
+            .map(r => `<tr>
             <td>${r.name}（${r.code}）</td>
             <td>${r.date}</td>
             <td class="pos">+${fmt(r.cash)}</td>
@@ -996,7 +1013,9 @@
       if (div.byStock.length) {
         let tbody = '';
         for (const s of div.byStock) {
-          let subRows = s.records.map(r => `<tr>
+          let subRows = [...s.records]
+            .sort((a, b) => b.date.localeCompare(a.date))
+            .map(r => `<tr>
             <td>${r.date}</td>
             <td class="pos">+${fmt(r.cash)}</td>
             <td>${r.stockDiv > 0 ? r.stockDiv : '—'}</td>

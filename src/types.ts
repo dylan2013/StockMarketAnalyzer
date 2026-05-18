@@ -22,6 +22,8 @@ export interface StockSummary {
   buyAmount: number;
   returnRate: number; // %
   avgHoldDays: number; // 平均持有天數
+  buyAvgPrice: number;  // 買進均價（總買進價金 ÷ 總股數）
+  sellAvgPrice: number; // 賣出均價（總賣出價金 ÷ 總股數）
 }
 
 export interface YearSummary {

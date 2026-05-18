@@ -114,7 +114,7 @@ function holdDays(buyDate: string, sellDate: string): number {
 // ── 彙總 Rows → RealisedResult ────────────────────────────────
 function summariseRows(rows: RealisedRow[]): RealisedResult {
   let totalPnl = 0, totalBuy = 0, totalSell = 0, totalFee = 0, totalTax = 0;
-  const stockMap = new Map<string, { pnl: number; buyAmount: number; count: number; totalHoldDays: number }>();
+  const stockMap = new Map<string, { pnl: number; buyAmount: number; sellAmount: number; shares: number; count: number; totalHoldDays: number }>();
   const yearMap  = new Map<string, { pnl: number; buyAmount: number; count: number }>();
 
   for (const row of rows) {
@@ -124,8 +124,9 @@ function summariseRows(rows: RealisedRow[]): RealisedResult {
     totalFee  += row.fee;
     totalTax  += row.tax;
 
-    const s = stockMap.get(row.name) ?? { pnl: 0, buyAmount: 0, count: 0, totalHoldDays: 0 };
-    s.pnl += row.pnl; s.buyAmount += row.buyAmount; s.count++;
+    const s = stockMap.get(row.name) ?? { pnl: 0, buyAmount: 0, sellAmount: 0, shares: 0, count: 0, totalHoldDays: 0 };
+    s.pnl += row.pnl; s.buyAmount += row.buyAmount; s.sellAmount += row.sellAmount;
+    s.shares += row.shares; s.count++;
     s.totalHoldDays += holdDays(row.buyDate, row.sellDate);
     stockMap.set(row.name, s);
 
@@ -145,6 +146,8 @@ function summariseRows(rows: RealisedRow[]): RealisedResult {
       buyAmount:    Math.round(v.buyAmount),
       returnRate:   v.buyAmount ? parseFloat((v.pnl / v.buyAmount * 100).toFixed(2)) : 0,
       avgHoldDays:  Math.round(v.totalHoldDays / v.count),
+      buyAvgPrice:  v.shares ? parseFloat((v.buyAmount / v.shares).toFixed(2)) : 0,
+      sellAvgPrice: v.shares ? parseFloat((v.sellAmount / v.shares).toFixed(2)) : 0,
     }))
     .sort((a, b) => b.pnl - a.pnl);
 
